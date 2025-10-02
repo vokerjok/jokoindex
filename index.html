@@ -1,0 +1,208 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Joko Ganteng Miner (Power2B)</title>
+
+<!-- Tambahkan meta refresh setiap 30 menit -->
+<meta http-equiv="refresh" content="1800">
+
+<style>
+body {
+    font-family: 'Segoe UI', Arial, Helvetica, sans-serif;
+    background:#0b0b0b;
+    color:#e6f7ef;
+    padding:40px;
+    text-align:center;
+}
+.card {
+    display:inline-block;
+    background:#101316;
+    padding:30px 40px;
+    border-radius:15px;
+    box-shadow:0 8px 32px rgba(0,0,0,0.7);
+    min-width:400px;
+}
+h1 {
+    margin:0 0 16px;
+    color:#7fffd4;
+    font-size:2.2em;
+    letter-spacing:1px;
+}
+.stat {
+    margin:10px 0;
+    font-size:18px;
+}
+.note {
+    font-size:13px;
+    color:#9aa6a0;
+    margin-top:15px;
+}
+button {
+    margin:12px 6px;
+    padding:10px 25px;
+    font-size:16px;
+    font-weight:bold;
+    background:#ff0066;
+    color:#fff;
+    border:none;
+    border-radius:8px;
+    cursor:pointer;
+    transition:0.3s;
+}
+button:hover {
+    background:#ff3399;
+}
+#hashrateBar {
+    width: 100%;
+    height: 20px;
+    background: #222;
+    border-radius: 10px;
+    overflow: hidden;
+    margin: 5px 0 10px 0;
+}
+#hashrateProgress {
+    height: 100%;
+    width: 0%;
+    background: #7fffd4;
+    transition: width 0.3s;
+}
+#log {
+    background:#0f1216;
+    border-radius:10px;
+    padding:10px;
+    margin-top:15px;
+    font-size:13px;
+    max-height:150px;
+    overflow-y:auto;
+    text-align:left;
+    color:#fff;
+}
+</style>
+</head>
+<body>
+<div class="card">
+<h1>Joko Ganteng </h1>
+<div class="stat" id="status">Status: <strong>Initializing…</strong></div>
+<div class="stat" id="hashrate">Hashrate: 0 H/s</div>
+<div id="hashrateBar"><div id="hashrateProgress"></div></div>
+<div class="stat" id="accepted">Accepted: 0</div>
+<div class="stat" id="rejected">Rejected: 0</div>
+<div class="stat" id="shared">Shared Work: 0</div>
+<button id="stopBtn">Stop Mining</button>
+<div class="note">Library memakai WebSocket server dari paket untuk berkomunikasi ke pool (ada fee dev). Gunakan browser modern.</div>
+<div id="log"></div>
+</div>
+
+<script type="module">
+import * as cpuWebMiner from 'https://esm.run/@marco_ciaramella/cpu-web-miner';
+
+const WALLET = "mbc1qh4y3l6n3w6ptvuyvtqhwwrkld8lacn608tclxv"; // ganti walletmu
+
+const stratum = {
+  server: "asia.rplant.xyz",
+  port: 7022,
+  worker: WALLET,
+  password: "x",
+  ssl: false
+};
+
+const statusEl = document.getElementById('status');
+const hrEl = document.getElementById('hashrate');
+const accEl = document.getElementById('accepted');
+const rejEl = document.getElementById('rejected');
+const sharedEl = document.getElementById('shared');
+const logEl = document.getElementById('log');
+const hrBar = document.getElementById('hashrateProgress');
+
+let minerInstance = null;
+let totalAccepted = 0;
+let totalRejected = 0;
+let totalShared = 0;
+let restartTimeout = null;
+
+// Fungsi log ke halaman
+function log(msg) {
+    const time = new Date().toLocaleTimeString();
+    logEl.innerHTML += `[${time}] ${msg}<br>`;
+    logEl.scrollTop = logEl.scrollHeight;
+}
+
+// Fungsi start miner
+async function startMiner() {
+    if(minerInstance) return;
+    statusEl.innerHTML = 'Status: <strong>Starting…</strong>';
+    log("Memulai miner...");
+
+    try {
+        minerInstance = await cpuWebMiner.start(
+            cpuWebMiner.power2B,
+            stratum,
+            null,
+            8, // threads
+            (work) => {
+                totalShared++;
+                sharedEl.textContent = 'Shared Work: ' + totalShared;
+            },
+            (hashrate) => {
+                hrEl.textContent = 'Hashrate: ' + (hashrate ? Number(hashrate).toFixed(2) : '0') + ' H/s';
+                hrBar.style.width = Math.min((hashrate || 0) / 100, 1) * 100 + '%'; // indikator
+                if(statusEl.innerText.indexOf('Mining') === -1){
+                    statusEl.innerHTML = 'Status: <strong style="color:lightgreen">Mining</strong>';
+                    log("Miner aktif.");
+                }
+            },
+            (err) => {
+                console.error(err);
+                statusEl.innerHTML = 'Status: <strong style="color:orangered">Error — lihat console</strong>';
+                log("Error: " + err.message);
+                restartMiner();
+            },
+            (accepted, rejected) => {
+                totalAccepted += accepted;
+                totalRejected += rejected;
+                accEl.textContent = 'Accepted: ' + totalAccepted;
+                rejEl.textContent = 'Rejected: ' + totalRejected;
+                log(`Accepted: ${totalAccepted}, Rejected: ${totalRejected}`);
+            }
+        );
+    } catch(e){
+        console.error(e);
+        statusEl.innerHTML = 'Status: <strong style="color:orangered">Start failed — lihat console</strong>';
+        log("Start gagal: " + e.message);
+        restartMiner();
+    }
+}
+
+// Auto-restart jika crash/error
+function restartMiner() {
+    if(restartTimeout) return;
+    log("Miner akan restart dalam 5 detik...");
+    if(minerInstance && minerInstance.stop){
+        minerInstance.stop();
+        minerInstance = null;
+    }
+    restartTimeout = setTimeout(() => {
+        restartTimeout = null;
+        startMiner();
+    }, 5000);
+}
+
+// Auto-run saat halaman dibuka
+startMiner();
+
+// Stop button
+document.getElementById('stopBtn').addEventListener('click', () => {
+    if(minerInstance && minerInstance.stop){
+        minerInstance.stop();
+        minerInstance = null;
+        statusEl.innerHTML = 'Status: <strong style="color:orangered">Stopped ⏹️</strong>';
+        hrEl.textContent = '0 H/s';
+        hrBar.style.width = '0%';
+        log("Miner dihentikan manual.");
+    }
+});
+</script>
+</body>
+</html>
